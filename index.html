@@ -159,6 +159,16 @@
     <p class="saved-msg" id="names-saved">Names saved!</p>
   </div>
   <div class="card">
+    <div class="card-title">Tournament winner predictions</div>
+    <p class="notice">Each person picks who they think will win the World Cup. Correct prediction = 3 bonus points, added at the end.</p>
+    <div id="winner-preds-grid" class="grid2" style="margin-bottom:12px"></div>
+    <div class="field" style="margin-bottom:12px">
+      <label>Actual tournament winner (enter at the end)</label>
+      <input type="text" id="actual-winner" placeholder="e.g. Brazil" oninput="saveWinnerData()">
+    </div>
+    <p class="saved-msg" id="winner-saved">Saved!</p>
+  </div>
+  <div class="card">
     <div class="card-title">About this app</div>
     <p style="font-size:13px;color:var(--text2);line-height:1.6">Enter each family member's prediction before each match, then add the result afterwards. Points are awarded automatically for correct predictions. The leaderboard updates in real time.<br><br>Data is saved on this device only.</p>
   </div>
@@ -196,20 +206,21 @@
 <script>
 const MEMBERS_KEY = 'wc26_members';
 const DATA_KEY = 'wc26_data';
+const WINNER_KEY = 'wc26_winner';
 
 const GROUPS = {
-  A: ['Mexico','USA','Canada','New Zealand'],
-  B: ['Spain','Morocco','Croatia','Belgium'],
-  C: ['Brazil','Serbia','Switzerland','Cameroon'],
-  D: ['France','Australia','Denmark','Tunisia'],
-  E: ['Germany','Japan','Colombia','Costa Rica'],
-  F: ['Portugal','Ghana','Uruguay','South Korea'],
-  G: ['Argentina','Poland','Saudi Arabia','Mexico'],
-  H: ['England','Iran','Senegal','Wales'],
-  I: ['Netherlands','Ecuador','Qatar','Ivory Coast'],
-  J: ['Italy','Cameroon','Albania','Honduras'],
-  K: ['USA','Panama','Bolivia','Egypt'],
-  L: ['Canada','Peru','Chile','Nigeria']
+  A: ['Mexico','South Africa','South Korea','Czechia'],
+  B: ['Canada','Bosnia-Herzegovina','Qatar','Switzerland'],
+  C: ['Brazil','Morocco','Haiti','Scotland'],
+  D: ['USA','Paraguay','Australia','Turkey'],
+  E: ['Germany','Curacao','Ivory Coast','Ecuador'],
+  F: ['Netherlands','Japan','Sweden','Tunisia'],
+  G: ['Belgium','Egypt','Iran','New Zealand'],
+  H: ['Spain','Cape Verde','Saudi Arabia','Uruguay'],
+  I: ['France','Senegal','Iraq','Norway'],
+  J: ['Argentina','Algeria','Austria','Jordan'],
+  K: ['Portugal','Congo DR','Uzbekistan','Colombia'],
+  L: ['England','Croatia','Ghana','Panama']
 };
 
 const KNOCKOUT = [
@@ -239,6 +250,19 @@ function loadData() { try { return JSON.parse(localStorage.getItem(DATA_KEY)) ||
 function saveData(d) { localStorage.setItem(DATA_KEY, JSON.stringify(d)); }
 function loadMembers() { try { return JSON.parse(localStorage.getItem(MEMBERS_KEY)) || ['David','Andrea','Freya','Thomas','']; } catch(e) { return ['David','Andrea','Freya','Thomas','']; } }
 function saveMembers(m) { localStorage.setItem(MEMBERS_KEY, JSON.stringify(m)); }
+function loadWinnerData() { try { return JSON.parse(localStorage.getItem(WINNER_KEY)) || { picks:{}, actual:'' }; } catch(e) { return { picks:{}, actual:'' }; } }
+function saveWinnerData() {
+  const wd = loadWinnerData();
+  const actualEl = document.getElementById('actual-winner');
+  if (actualEl) wd.actual = actualEl.value.trim();
+  activeMembers().forEach(name => {
+    const el = document.getElementById('winner-pick-' + name);
+    if (el) wd.picks[name] = el.value.trim();
+  });
+  localStorage.setItem(WINNER_KEY, JSON.stringify(wd));
+  const msg = document.getElementById('winner-saved');
+  if (msg) { msg.style.display = 'block'; setTimeout(() => msg.style.display = 'none', 2000); }
+}
 
 let members = loadMembers();
 let data = loadData();
@@ -266,6 +290,15 @@ function renderSetup() {
       <label>Player ${i+1}</label>
       <input type="text" id="member-${i}" value="${m}" placeholder="Name">
     </div>`).join('');
+
+  const wd = loadWinnerData();
+  document.getElementById('winner-preds-grid').innerHTML = activeMembers().map(name => `
+    <div class="field">
+      <label>${name}'s pick</label>
+      <input type="text" id="winner-pick-${name}" value="${wd.picks[name]||''}" placeholder="e.g. Brazil" oninput="saveWinnerData()">
+    </div>`).join('');
+  const actualEl = document.getElementById('actual-winner');
+  if (actualEl) actualEl.value = wd.actual || '';
 }
 
 function saveNames() {
@@ -274,6 +307,7 @@ function saveNames() {
   const el = document.getElementById('names-saved');
   el.style.display = 'block';
   setTimeout(() => el.style.display = 'none', 2000);
+  renderSetup();
 }
 
 function renderMatches() {
@@ -368,6 +402,14 @@ function calcScores() {
       }
     });
   });
+  const wd = loadWinnerData();
+  if (wd.actual) {
+    activeMembers().forEach(name => {
+      if (wd.picks[name] && wd.picks[name].toLowerCase() === wd.actual.toLowerCase()) {
+        scores[name] = (scores[name] || 0) + 3;
+      }
+    });
+  }
   return { scores, preds };
 }
 
@@ -378,18 +420,20 @@ function renderLeaderboard() {
     return;
   }
   const { scores, preds } = calcScores();
+  const wd = loadWinnerData();
   const sorted = am.map((name,i) => ({ name, pts: scores[name]||0, preds: preds[name]||0, idx:i })).sort((a,b) => b.pts - a.pts);
   const totalResults = data.filter(m => m.result).length;
 
   const leader = sorted[0];
   const leaderAcc = leader.preds > 0 ? Math.round((leader.pts/leader.preds)*100)+'%' : '—';
+  const leaderBonus = wd.actual && wd.picks[leader.name] && wd.picks[leader.name].toLowerCase() === wd.actual.toLowerCase();
 
   const heroHTML = `<div class="hero">
     <div class="hero-av">${initials(leader.name)}</div>
     <div>
       <div class="hero-label">Current leader</div>
       <div class="hero-name">${leader.name}</div>
-      <div class="hero-stats">${leader.pts} pts &nbsp;·&nbsp; ${leaderAcc} accuracy</div>
+      <div class="hero-stats">${leader.pts} pts &nbsp;·&nbsp; ${leaderAcc} accuracy${leaderBonus ? ' &nbsp;·&nbsp; +3 bonus' : ''}</div>
     </div>
     <div class="hero-medal">🥇</div>
   </div>`;
@@ -402,9 +446,10 @@ function renderLeaderboard() {
       const acc = p.preds > 0 ? Math.round((p.pts/p.preds)*100)+'%' : '—';
       const rank = i+2;
       const medal = medals[rank] || rank;
+      const bonus = wd.actual && wd.picks[p.name] && wd.picks[p.name].toLowerCase() === wd.actual.toLowerCase();
       return `<tr>
         <td class="lb-rank">${medal}</td>
-        <td><span class="lb-av">${initials(p.name)}</span>${p.name}</td>
+        <td><span class="lb-av">${initials(p.name)}</span>${p.name}${bonus ? ' <span style="font-size:11px;color:var(--warning);font-weight:600">+3</span>' : ''}</td>
         <td class="lb-pts">${p.pts}</td>
         <td class="lb-acc">${acc}</td>
       </tr>`;
@@ -417,12 +462,15 @@ function renderLeaderboard() {
     return a > (best.a||-1) ? {name:p.name, a} : best;
   }, {});
 
+  const winnerNote = wd.actual ? `<div class="notice" style="margin-bottom:14px">Tournament winner entered: <strong>${wd.actual}</strong>. Bonus points applied.</div>` : '';
+
   document.getElementById('lb-content').innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
       <span style="font-size:22px">🏆</span>
       <span style="font-size:17px;font-weight:600">Leaderboard</span>
       <span style="font-size:12px;color:var(--text2);margin-left:4px">${totalResults} results in</span>
     </div>
+    ${winnerNote}
     ${heroHTML}
     ${tableHTML}
     <div class="stats-row">
